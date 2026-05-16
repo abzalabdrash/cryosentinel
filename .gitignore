@@ -1,0 +1,94 @@
+# --- Python ----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# --- Virtual environments --------------------------------------------------
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# --- Tooling caches --------------------------------------------------------
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+*.cover
+*.py,cover
+
+# --- Jupyter ---------------------------------------------------------------
+.ipynb_checkpoints/
+
+# --- IDE -------------------------------------------------------------------
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# --- OS --------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+
+# --- Project-specific ------------------------------------------------------
+# Local data (download via HF; do not commit raw chips)
+/data/
+!/data/.gitkeep
+
+# Local checkpoints (download via HF; do not commit weights)
+/checkpoints/
+!/checkpoints/.gitkeep
+*.ckpt
+*.pt
+*.pth
+*.safetensors
+
+# Modal volumes mirror
+.modal/
+__modal/
+
+# Diagnostic outputs
+/diagnostics/
+/artifacts/
+/wandb/
+/runs/
+/logs/
+metrics.csv
+
+# Credentials (never commit)
+.env
+.env.*
+!.env.example
+.creds/
+*.json.key
+service-account*.json
+gcp-sa.json
+
+# Drafts that are not part of the public release
+/_publish_drafts/
+/_extracted_skills/

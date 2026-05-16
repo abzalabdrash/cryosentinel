@@ -1,0 +1,43 @@
+# Smoke-train config: 2 epochs on hindu_kush 2022 only, CPU-friendly.
+# Verifies the full Lightning pipeline (data → model → loss → checkpoint).
+
+run_name: smoke
+output_dir: outputs/terramind
+seed: 42
+run_test: false                 # skip test on smoke
+
+data:
+  data_dir: data/processed/multimodal_chips
+  regions: [hindu_kush]
+  years: [2022]
+  batch_size: 2
+  num_workers: 0                # 0 to avoid Windows multiprocessing on smoke
+  augment: true
+  rot90: false                  # ViT pos-emb safe
+  shard_cache_size: 1
+  pin_memory: false
+  persistent_workers: false
+
+model:
+  modalities: [S2L2A, S1GRD, DEM]
+  decoder: UNetDecoder
+  decoder_channels: [256, 128, 64, 32]
+  backbone_pretrained: false    # avoid HF download in smoke
+  freeze_backbone_layers: 0
+  lr: 1.0e-4
+  backbone_lr_mult: 0.1
+  weight_decay: 1.0e-4
+  w_bce: 1.0
+  w_dice: 1.0
+  w_boundary: 0.5
+  val_tta: false                # skip TTA for smoke speed
+
+trainer:
+  max_epochs: 2
+  accelerator: auto
+  devices: 1
+  precision: 32-true
+  gradient_clip_val: 1.0
+  accumulate_grad_batches: 1
+  log_every_n_steps: 5
+  check_val_every_n_epoch: 1

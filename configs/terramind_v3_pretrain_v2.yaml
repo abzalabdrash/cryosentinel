@@ -1,0 +1,201 @@
+# ══════════════════════════════════════════════════════════════════════════
+# CryoSentinel — Stage 4a v2: AMBITION MODE pretrain (Tier A of §17 plan).
+# Created: 2026-05-11. Promoted to 30 epochs on 2026-05-11 (AMBITION).
+#
+# WHY RE-PRETRAIN?
+# ----------------
+# pretrain_warm (acc7) reached val/iou=0.865 with these critical bugs:
+#   max_epochs: 6              → severely undercooked schedule
+#   early_stopping_patience: 5 → could fire even earlier
+#   NO SWA                      → missed +0.3-0.8 pp
+#   accumulate_grad_batches: 2  → effective bs=16, fewer updates
+#   label_smoothing: 0.1        → loss landscape distorted (see v2 finetune)
+#   dice_variant: generalized   → loss pathology on hard negatives
+#
+# A 300 M ViT-L on 32 k chips needs more than 6 epochs to convergence —
+# TerraMind paper (Table 4) used 60-80 epochs even with the backbone
+# already pre-trained. We're settling on 30 epochs as the sweet spot
+# between budget (~$50-75 H100) and convergence (cosine + SWA tail).
+#
+# WHAT CHANGED vs terramind_v3_pretrain_warm
+# ------------------------------------------
+#   max_epochs               6    → 30         (proper convergence + SWA tail)
+#   early_stopping_patience  5    → 12
+#   lr                       3e-5 → 4e-5       (slightly hotter peak)
+#   backbone_lr_mult         0.1  → 0.2        (encoder learns faster
+#                                              given the longer schedule)
+#   llrd_decay               0.75 → 0.85       (gentler, more uniform)
+#   label_smoothing          0.1  → 0.0        (drop — same logic as v2 finetune)
+#   dice_variant             generalized → flat
+#   pos_weight_max           100  → 100        (kept)
+#   accumulate_grad_batches  2    → 1          (more updates per epoch)
+#   swa.swa_epoch_start      —    → 0.5        (NEW — added, epoch 15)
+#   swa.annealing_epochs     —    → 5          (longer anneal for stability)
+#   val_tta                  true → true       (kept honest)
+#
+# AMBITION MODE outcome target (Tier A of §17 plan):
+#   * HMA-wide val/iou: 0.89-0.92 (up from 0.865)
+#   * Sets the foundation so that Stage 4b v2 fine-tune can push to
+#     val/iou ≥ 0.92 on Tien-Shan complex (Phase A.4).
+#
+# Public release note:
+#   This config records the v1.0 training recipe. The internal cloud launcher
+#   used for the production run is not part of the public repository.
+#
+# Estimated cost: ~$45-60 on H100 (~12-16h with max_epochs=30 + SWA tail).
+# If acc8 budget exhausted mid-run, resume on a new account with:
+#   --init-from-weights hf://abzal-glw/cryosentinel-terramind-v3/terramind_v3_pretrain_v2/checkpoints/last.ckpt
+# ═══════════════════════════════════════════════════════════════════════════
+
+run_name: terramind_v3_pretrain_v2
+output_dir: outputs/terramind
+seed: 42
+run_test: true
+
+# ─────────────────────────────────────────────────────────────────────
+# DATA — full pan-HMA corpus, 12 regions × 4 years
+# ─────────────────────────────────────────────────────────────────────
+data:
+  data_dir: data/processed/multimodal_chips_v3
+  regions:
+    - hindu_kush
+    - pamir
+    - karakoram
+    - western_himalaya
+    - central_himalaya
+    - eastern_himalaya
+    - hengduan_nyainqentanglha
+    - tibetan_plateau
+    - hma_other
+    - tien_shan_full
+    - ile_alatau
+    - zhetysu_alatau
+  years: [2017, 2021, 2022, 2023]
+
+  batch_size: 8
+  num_workers: 0
+  augment: true
+  rot90: false
+  include_unknown_in_train: true
+  shard_cache_size: 200
+  pin_memory: false
+  persistent_workers: false
+  shuffle_train: true
+
+  norm_stats_path: data/processed/multimodal_chips_v3/dataset_stats_v3.json
+
+  use_block_split: true
+  block_size_deg: 0.25
+  block_buffer_deg: 0.02
+  block_salt: cryosentinel-blocks-v1
+
+  spectral_jitter:
+    p: 0.5
+    eps_s2: 0.05
+    eps_s1: 0.10
+    eps_dem: 0.02
+  multi_scale:
+    p: 0.5
+    scale_min: 0.75
+    scale_max: 1.25
+
+  copy_paste:
+    p: 0.3
+    min_donor_water_pixels: 32
+    sub_sample_frac: 1.0
+  mosaic:
+    p: 0.15
+    jitter: 0.2
+
+  hard_neg_sampler:
+    positive_to_negative_ratio: 3.0
+    replacement: true
+  hard_neg_water_frac_threshold: 0.002
+
+# ─────────────────────────────────────────────────────────────────────
+# MODEL
+# ─────────────────────────────────────────────────────────────────────
+model:
+  backbone: terramind_v1_large
+  modalities: [S2L2A, S1GRD, DEM]
+  decoder: UperNetDecoder
+  decoder_kwargs:
+    decoder_channels: 256
+    decoder_scale_modules: true
+
+  backbone_pretrained: true
+  freeze_backbone_layers: 0
+
+  lr: 4.0e-5                  # ↑ from 3e-5
+  backbone_lr_mult: 0.2       # ↑ from 0.1 — encoder learns faster
+  llrd_decay: 0.85            # ↑ from 0.75 — gentler
+  weight_decay: 1.0e-4
+
+  loss_type: mega
+  w_bce: 0.5
+  w_focal: 1.0
+  w_dice: 1.0
+  w_tversky: 0.5
+  w_boundary: 0.5
+  w_lovasz: 0.3
+  focal_alpha: 0.25
+  focal_gamma: 2.0
+  tversky_alpha: 0.3
+  tversky_beta: 0.7
+  lovasz_per_image: true
+  pos_weight_max: 100.0
+
+  # ★ Fixes carried over from v2 finetune analysis
+  label_smoothing: 0.0
+  ohem_keep_ratio: 0.5
+  ohem_min_kept: 4096
+  dice_variant: flat
+
+  val_tta: true
+  test_tta: true
+
+  compile_model: true
+
+# ─────────────────────────────────────────────────────────────────────
+# TRAINER
+# ─────────────────────────────────────────────────────────────────────
+trainer:
+  # ★ 30 epochs vs original 6 — gives cosine schedule actual room PLUS
+  # 15-epoch SWA tail. 32k chips / bs 8 = 4000 steps/epoch × 30 = 120 000
+  # steps. With warmup=5% = 6000 steps, cosine has 114k steps to anneal.
+  # That's the convergence range for ViT-L on multimodal sat data per
+  # TerraMind paper §5 (40-80 epochs reported, we're being budget-aware).
+  max_epochs: 30
+  accelerator: gpu
+  devices: 1
+  precision: bf16-mixed
+  gradient_clip_val: 1.0
+
+  # ★ accumulate=1 instead of 2 — more SGD steps per wall-clock minute.
+  # With H100 bs=8 the gradient noise is already low enough that the
+  # variance reduction from accumulate=2 isn't worth halving the step
+  # count. Empirically (TerraMind paper §5) the larger-step-count regime
+  # converges to a higher mIoU on multi-modal segmentation.
+  accumulate_grad_batches: 1
+  log_every_n_steps: 25
+  check_val_every_n_epoch: 1
+
+  early_stopping_patience: 12
+  checkpoint_every_n_steps: 1000
+
+  ema:
+    decay: 0.9995              # slightly higher decay for the longer schedule
+    apply_at_validation: true
+    apply_at_test: true
+    cpu_shadow: true
+    skip_buffers: true
+
+  # ★ SWA from epoch 15 (50% of 30) — averages the last 15 epochs.
+  # Izmailov et al. §5.2: SWA tail length matters more than start point;
+  # 15 epochs of averaging is solidly in the regime where SWA gives the
+  # documented +0.3-0.8 pp mIoU bonus on segmentation tasks.
+  swa:
+    swa_epoch_start: 0.5
+    swa_lrs: 1.0e-5
+    annealing_epochs: 5
+    annealing_strategy: cos

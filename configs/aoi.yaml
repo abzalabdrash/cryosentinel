@@ -1,0 +1,184 @@
+# ─────────────────────────────────────────────────────────────
+# CryoSentinel — Areas of Interest configuration
+# ─────────────────────────────────────────────────────────────
+# bbox format: [west, south, east, north] in WGS84 / EPSG:4326
+# ─────────────────────────────────────────────────────────────
+
+primary:
+  name: "Ile Alatau"
+  description: "Northern Tien Shan, Almaty Region, Kazakhstan"
+  # Покрывает горный диапазон от Чиликской системы до Курты,
+  # все ледники и ледниковые озёра от 2500 m до 4500 m.
+  bbox: [76.5, 42.7, 78.2, 43.55]
+  crs: "EPSG:4326"
+  utm_zone: 43  # для проекций
+  elevation_range_m: [2500, 4980]
+  area_km2: 11500
+
+# ─────────────────────────────────────────────────────────────
+# Stage 3 — Northern Tien Shan fine-tune regions
+# Multi-year multi-modal target — все 3 хребта объединены
+# ─────────────────────────────────────────────────────────────
+tienshan_north:
+  description: "Northern Tien Shan — Ile + Zhetysu + Kungey Alatau (~600 lakes)"
+  regions:
+    ile_alatau:
+      bbox: [76.5, 42.7, 78.2, 43.55]
+      lakes_approx: 162
+      glof_priority: "CRITICAL"  # Almaty 2.2M downstream
+    zhetysu_alatau:
+      # Dzungarian Alatau — самый большой ледниковый узел в KZ
+      bbox: [78.0, 43.8, 81.5, 45.5]
+      lakes_approx: 400
+      glof_priority: "HIGH"  # 2019 Taldykorgan event
+    kungey_alatau:
+      # KZ/KG border, строго южнее Ile (which starts at lat 42.7)
+      # north shore of Issyk-Kul lake region
+      bbox: [76.5, 42.4, 78.0, 42.7]
+      lakes_approx: 80
+      glof_priority: "MEDIUM"
+
+# ─────────────────────────────────────────────────────────────
+# Stage 3 — HMA-wide pretrain sub-regions
+# Full HMA bbox (from Kumar 2022): [67.46, 26.97, 103.87, 45.40]
+# Split на 8 sub-regions для batch processing GEE (concurrent_batch_tasks=2)
+# Каждый sub-region < 200k km², 5-7 EECU-hours
+# ─────────────────────────────────────────────────────────────
+hma_pretrain:
+  description: "Full HMA sub-regions — Kumar&Vijay 2022 inventory bounds"
+  full_bbox: [67.46, 26.97, 103.87, 45.40]
+  sub_regions:
+    hindu_kush:
+      bbox: [67.0, 33.0, 72.0, 38.0]
+      lakes_approx: 800
+    pamir:
+      bbox: [70.0, 36.0, 76.0, 40.0]
+      lakes_approx: 1500
+    karakoram:
+      bbox: [73.0, 34.0, 78.0, 37.0]
+      lakes_approx: 2000
+    western_himalaya:
+      bbox: [73.0, 30.0, 80.0, 35.0]
+      lakes_approx: 3000
+    central_himalaya:
+      bbox: [79.0, 26.0, 89.0, 32.0]
+      lakes_approx: 6000
+    eastern_himalaya:
+      bbox: [88.0, 26.0, 96.0, 30.5]
+      lakes_approx: 4500
+    hengduan_nyainqentanglha:
+      bbox: [94.0, 28.0, 104.0, 33.0]
+      lakes_approx: 3000
+    tien_shan_full:
+      # Tien Shan + Pamir Alay (включает наши Ile/Zhetysu/Kungey + KG/CN части)
+      bbox: [70.0, 38.0, 83.0, 45.5]
+      lakes_approx: 5500
+    tibetan_plateau:
+      # Internal Tibetan Plateau — saline lakes + small glacial lakes
+      bbox: [79.0, 30.0, 94.0, 36.0]
+      lakes_approx: 4000
+    hma_other:
+      # Catch-all fallback (lakes outside specific sub-regions but inside HMA bbox)
+      # Used last in region assignment — order matters in build_lake_split.py
+      bbox: [67.46, 26.97, 103.87, 45.40]
+      lakes_approx: 0  # whatever falls through
+
+# ─────────────────────────────────────────────────────────────
+# Multi-year snapshots — Kumar&Vijay PANGAEA DOI 10.1594/PANGAEA.983845
+# Используем _median версии (multi-image robust delineation)
+# ─────────────────────────────────────────────────────────────
+snapshots:
+  - year: 2016
+    shapefile: "Glacial_lakes_2016_median.shp"
+    sensor: "Sentinel-2 L2A"
+    notes: "Median delineation across multiple Aug-Sep 2016 scenes"
+  - year: 2022
+    shapefile: "Glacial_lakes_2022_median.shp"
+    sensor: "Sentinel-2 L2A"
+    notes: "Median delineation across multiple Aug-Sep 2022 scenes"
+
+# Test sites — известные ледники для дев / отладки
+test_sites:
+  - id: "tuyuksu"
+    name: "Tuyuksu Glacier"
+    description: "WGMS reference glacier, 1957-present continuous record"
+    centroid: [77.07, 43.05]
+    radius_km: 5
+    elev_m: 3500
+    notes: "Главный референс — IPCC reference glacier"
+
+  - id: "issyk_lake"
+    name: "Issyk Lake"
+    description: "1963 GLOF disaster site — 100+ deaths"
+    centroid: [77.95, 43.22]
+    radius_km: 3
+    elev_m: 1760
+    notes: "Историческое озеро прорывa, для validation"
+
+  - id: "bolshoe_almatinskoe"
+    name: "Bolshoe Almatinskoe Lake"
+    description: "Big Almaty Lake — moraine-dammed, городское водоснабжение"
+    centroid: [76.985, 43.054]
+    radius_km: 2
+    elev_m: 2511
+    notes: "Высокий риск — выше плотины Almaty"
+
+  - id: "manshuk_mametova"
+    name: "Manshuk Mametova Lake"
+    description: "Recent glacial lake formation post-2010"
+    centroid: [77.08, 43.10]
+    radius_km: 1
+    elev_m: 3700
+    notes: "Молодое озеро, активный мониторинг"
+
+  - id: "kumbel_lake"
+    name: "Kumbel Lake"
+    description: "Test site — moderate size moraine lake"
+    centroid: [77.15, 43.08]
+    radius_km: 1.5
+    elev_m: 3200
+    notes: ""
+
+# Downstream communities at risk (для hazard scoring)
+communities:
+  - name: "Almaty City"
+    centroid: [76.945, 43.238]
+    population: 2200000
+    elevation_m: 700
+
+  - name: "Talgar"
+    centroid: [77.241, 43.298]
+    population: 50000
+    elevation_m: 950
+
+  - name: "Esik"
+    centroid: [77.456, 43.355]
+    population: 36000
+    elevation_m: 1100
+
+  - name: "Kaskelen"
+    centroid: [76.626, 43.205]
+    population: 65000
+    elevation_m: 760
+
+# Сезонные периоды для time-series
+seasons:
+  spring_melt: { months: [4, 5, 6], cloud_max_pct: 30 }
+  peak_summer: { months: [7, 8, 9], cloud_max_pct: 20 }   # inference / EWS window
+  autumn_freeze: { months: [10, 11], cloud_max_pct: 40 }
+  winter_dormant: { months: [12, 1, 2, 3], cloud_max_pct: 60 }  # SAR only
+
+# ─────────────────────────────────────────────────────────────
+# Stage 3 — Inventory matching window (для labels Kumar 2016/2022)
+# Должно совпадать с post-melt period когда озёра max area
+# ─────────────────────────────────────────────────────────────
+inventory_window:
+  months: [8, 9]              # август-сентябрь, post-melt
+  cloud_max_pct_s2: 20
+  description: "Aug-Sep — Kumar&Vijay делал inventory именно в этот период"
+
+# Tile resolution для inference
+tiles:
+  size_px: 256          # Prithvi-2.0 native input
+  overlap_px: 32        # для seamless mosaics
+  resolution_m: 10      # Sentinel-2 native (B2/B3/B4/B8)

@@ -1,0 +1,65 @@
+cff-version: 1.2.0
+message: "If you use CryoSentinel in your research or operational work, please cite as below."
+title: "CryoSentinel: A Foundation-Model Glacial Lake Segmenter for High Mountain Asia"
+type: software
+version: v1.0.0
+date-released: 2026-05-16
+authors:
+  - family-names: Abdrash
+    given-names: Abzal
+    affiliation: "Almaty, Kazakhstan"
+    orcid: "https://orcid.org/0009-0006-4829-0256"
+repository-code: "https://github.com/abzalabdrash/Cryosentinel"
+url: "https://glofcast.org"
+license: Apache-2.0
+keywords:
+  - glacial lakes
+  - glacial lake outburst flood
+  - GLOF
+  - early warning
+  - remote sensing
+  - foundation model
+  - TerraMind
+  - semantic segmentation
+  - multimodal
+  - Sentinel-1
+  - Sentinel-2
+  - Copernicus DEM
+  - High Mountain Asia
+  - Tien Shan
+  - Central Asia
+preferred-citation:
+  type: software
+  title: "CryoSentinel: A Foundation-Model Glacial Lake Segmenter for High Mountain Asia"
+  authors:
+    - family-names: Abdrash
+      given-names: Abzal
+  year: 2026
+  url: "https://github.com/abzalabdrash/Cryosentinel"
+  version: v1.0.0
+references:
+  - type: article
+    authors:
+      - family-names: Adhikari
+        given-names: Pawan
+      - family-names: Regmi
+        given-names: Satish Raj
+    year: 2025
+    title: "Targeted Semantic Segmentation of Himalayan Glacial Lakes Using Time-Series SAR: Towards Automated GLOF Early Warning"
+    url: "https://arxiv.org/abs/2512.24117"
+  - type: article
+    authors:
+      - family-names: Jakubik
+        given-names: Johannes
+    year: 2025
+    title: "TerraMind: Large-Scale Generative Multimodality for Earth Observation"
+    url: "https://arxiv.org/abs/2504.11171"
+  - type: dataset
+    authors:
+      - family-names: Kumar
+        given-names: Ravindra
+      - family-names: Vijay
+        given-names: Saurabh
+    year: 2026
+    title: "Inventory of Glacial Lakes in High Mountain Asia for the Years 2016 and 2022"
+    doi: "10.1594/PANGAEA.983845"

@@ -1,0 +1,37 @@
+CryoSentinel
+Copyright 2026 Abzal Abdrash
+
+This product includes software developed by Abzal Abdrash (Almaty, Kazakhstan)
+as part of the GLOFcast project (https://glofcast.org).
+
+The CryoSentinel name, logo, social preview, and project identity assets are
+used to identify this project and its releases. The Apache License 2.0 grants
+rights to the software and model code as described in LICENSE; it does not grant
+permission to use the CryoSentinel name, logo, or maintainer identity to imply
+endorsement, affiliation, sponsorship, or an official downstream release.
+
+This product depends on, fine-tunes, or otherwise builds upon the following
+third-party works, used under their respective licenses:
+
+- TerraMind 1.0 (IBM Research / European Space Agency Φ-lab / FAST-EO project)
+  https://github.com/IBM/terramind
+  Apache License 2.0.
+  Cited as: Jakubik, J., et al. (2025). TerraMind: Large-Scale Generative
+  Multimodality for Earth Observation. arXiv:2504.11171.
+
+- TerraTorch (IBM Research)
+  https://github.com/IBM/terratorch
+  Apache License 2.0.
+
+- Sentinel-1, Sentinel-2 imagery (Copernicus / European Space Agency)
+  Used under the Copernicus Open Access licence.
+
+- Copernicus DEM 30 m (European Space Agency)
+  Used under the ESA standard licence for Copernicus DEM products.
+
+- Inventory of Glacial Lakes in High Mountain Asia for the Years 2016 and 2022
+  Kumar, R. & Vijay, S. (2026). PANGAEA. doi:10.1594/PANGAEA.983845.
+  Used under PANGAEA's Creative Commons Attribution licence.
+
+Modifications to third-party works are documented in the project's CHANGELOG
+and in the inline comments of the configuration files under `configs/`.

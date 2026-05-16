@@ -1,0 +1,234 @@
+# ══════════════════════════════════════════════════════════════════════════
+# CryoSentinel — Stage 4b v2: SENIOR FIX of the original finetune_almaty.
+# Created: 2026-05-11.
+#
+# ROOT CAUSE FIXED:
+# -----------------
+# v1 had the encoder EFFECTIVELY FROZEN due to a 3-way compound:
+#
+#   freeze_backbone_layers: 6   →  blocks 0-5 hard-frozen
+#   backbone_lr_mult: 0.05      →  ×0.05 on top of LLRD for ALL encoder blocks
+#   llrd_decay: 0.85            →  0.85^18 = 0.054 multiplier on block 6
+#
+#   ⇒ block_6 effective LR = 5e-5 × 0.05 × 0.054 = 1.35e-7 (3700× < decoder)
+#   ⇒ cumulative LR per block (from metrics.csv) was 0.3% of decoder for block_6
+#     and only 4.25% for the last block 23. Encoder couldn't adapt to Tien-Shan.
+#
+# Plus: `val_tta: false` made checkpoint selection use a noisy un-augmented
+# metric (vs Stage 4a which used val_tta: true → val/iou 0.865 honestly).
+# Plus: SWA was configured at 0.75 of 20 epochs (epoch 15), but early-stopping
+# patience=6 killed the run at epoch 8 → SWA never activated.
+# Plus: label_smoothing=0.1 + generalized dice + 1% water fraction inflates
+# `val/dice` to 0.999 (loss pathology — doesn't affect hard IoU but ruins
+# loss-based diagnostics and hurts BCE calibration).
+#
+# WHAT CHANGED vs terramind_v3_finetune_almaty.yaml
+# -------------------------------------------------
+#   freeze_backbone_layers   6   → 0          (unfreeze ALL encoder blocks)
+#   backbone_lr_mult         0.05 → 0.25       (proper backbone LR)
+#   llrd_decay               0.85 → 0.9        (block_6 mult: 0.054 → 0.150)
+#   lr                       5e-5 → 6e-5       (slightly hotter decoder)
+#   label_smoothing          0.1  → 0.0        (drop for binary imbalanced)
+#   dice_variant             generalized → flat
+#   pos_weight_max           200  → 100        (match Stage 4a, less FN over-weighting)
+#   ohem_keep_ratio          0.7  → 0.5        (more aggressive hard-mining)
+#   ohem_min_kept            2048 → 4096       (match Stage 4a)
+#   val_tta                  false → true      (HONEST checkpoint selection)
+#   max_epochs               20   → 30         (room for SWA)
+#   early_stopping_patience  6    → 15         (don't kill SWA)
+#   swa.swa_epoch_start      0.75 → 0.4        (SWA from ~epoch 12)
+#   block_size_deg           0.25 → 0.15       (less split variance, more blocks)
+#
+# Expected outcome on val (honest, with TTA): 0.88-0.91.
+# Expected outcome on test (with TTA + soup): 0.93-0.95.
+#
+# Public release note:
+#   This config records the v1.0 finetune recipe. The internal cloud launcher
+#   used for the production run is not part of the public repository.
+#
+# Estimated cost: ~$8-12 on H100 (~2.5-3.5h with max_epochs=30; early stop
+# usually fires before 30, plus SWA tail).
+# ═══════════════════════════════════════════════════════════════════════════
+
+run_name: terramind_v3_finetune_almaty_v2
+output_dir: outputs/terramind
+seed: 42
+run_test: true
+
+# ─────────────────────────────────────────────────────────────────────
+# DATA
+# ─────────────────────────────────────────────────────────────────────
+data:
+  data_dir: data/processed/multimodal_chips_v3
+  regions:
+    - tien_shan_full
+    - ile_alatau
+    - zhetysu_alatau
+  years: [2017, 2021, 2022, 2023]
+
+  batch_size: 8
+  num_workers: 0
+  augment: true
+  rot90: false
+  include_unknown_in_train: true
+  shard_cache_size: 50
+  pin_memory: false
+  persistent_workers: false
+  shuffle_train: true
+
+  norm_stats_path: data/processed/multimodal_chips_v3/dataset_stats_v3.json
+
+  # ── Block split (finer to reduce val/test variance) ───────────
+  # 0.25° → 0.15° means ~3× more unique blocks (60→180), reducing the
+  # chance that one unlucky block dominates val. Buffer kept at 0.02°.
+  use_block_split: true
+  block_size_deg: 0.15
+  block_buffer_deg: 0.02
+  block_salt: cryosentinel-blocks-v1
+
+  # ── Phase D.4 augmentations ─────────────────────────────────────
+  # Slightly milder than v1 — encoder is now training, so the model
+  # already has enough variance from the optimizer; aggressive aug
+  # competing with encoder adaptation is counterproductive.
+  spectral_jitter:
+    p: 0.4
+    eps_s2: 0.03
+    eps_s1: 0.07
+    eps_dem: 0.02
+  multi_scale:
+    p: 0.4
+    scale_min: 0.8
+    scale_max: 1.20
+
+  copy_paste:
+    p: 0.2
+    min_donor_water_pixels: 32
+    sub_sample_frac: 1.0
+
+  hard_neg_sampler:
+    positive_to_negative_ratio: 3.0
+    replacement: true
+  hard_neg_water_frac_threshold: 0.002
+
+# ─────────────────────────────────────────────────────────────────────
+# MODEL — unfrozen encoder, balanced LLRD
+# ─────────────────────────────────────────────────────────────────────
+model:
+  backbone: terramind_v1_large
+  modalities: [S2L2A, S1GRD, DEM]
+  decoder: UperNetDecoder
+  decoder_kwargs:
+    decoder_channels: 256
+    decoder_scale_modules: true
+
+  backbone_pretrained: true
+
+  # ★ KEY FIX 1 — UNFREEZE all encoder blocks.
+  # The original Stage 4a (pretrain_warm) also used freeze=0 and that's
+  # the right answer for fine-tune too: a frozen encoder with 8.4k train
+  # chips on a new geography is decoder-only adaptation which caps at
+  # ~0.82 val/iou regardless of how long you train.
+  freeze_backbone_layers: 0
+
+  # ★ KEY FIX 2 — Properly scaled backbone LR.
+  # 0.05 → 0.25: with llrd_decay=0.9 the effective LR profile becomes
+  #   block_23 = lr × 0.25 × 0.9^1  = 0.225 × lr  (vs v1: 0.0425 × lr)
+  #   block_15 = lr × 0.25 × 0.9^9  = 0.097 × lr  (vs v1: 0.0116 × lr)
+  #   block_6  = lr × 0.25 × 0.9^18 = 0.038 × lr  (vs v1: 0.0027 × lr)
+  #   block_0  = lr × 0.25 × 0.9^24 = 0.020 × lr  (vs v1: frozen)
+  # Now EVERY block sees > 1% of decoder LR — the encoder can genuinely
+  # adapt to Tien-Shan distribution.
+  backbone_lr_mult: 0.25
+
+  # ★ KEY FIX 3 — Gentler LLRD decay so deep blocks still learn.
+  # 0.85 was too aggressive when combined with backbone_lr_mult=0.05;
+  # 0.9 keeps the BERT-style geometric profile but doesn't crush block_6.
+  llrd_decay: 0.9
+  # llrd_n_blocks: null   # auto = 24 for *_large
+
+  lr: 6.0e-5              # decoder peak LR
+  weight_decay: 1.0e-4
+
+  # ── Loss (boundary-heavy MEGA) ─────────────────────────────
+  loss_type: mega
+  w_bce: 0.5
+  w_focal: 1.0
+  w_dice: 1.0
+  w_tversky: 0.5
+  w_boundary: 0.5
+  w_lovasz: 0.3
+  focal_alpha: 0.25
+  focal_gamma: 2.0
+  tversky_alpha: 0.25
+  tversky_beta: 0.75
+  lovasz_per_image: true
+
+  # ★ KEY FIX 4 — Lower pos_weight_max.
+  # Empirical 1% water → real pos:neg ratio ~100:1. Clamping to 200
+  # double-counts FN penalty and pushes the model to over-predict water,
+  # which inflates BCE noise. Stage 4a used 100.0 successfully.
+  pos_weight_max: 100.0
+
+  # ★ KEY FIX 5 — Drop label smoothing for binary imbalanced.
+  # Müller et al. NeurIPS 2019 + ICLR 2025 explicitly show LS degrades
+  # selective classification AND interacts badly with inverse-frequency
+  # Dice on extreme imbalance (pushes P_bg → 0.05 everywhere, inflates
+  # union_fg, makes generalized_dice loss ≈ 1.0 even on perfect chips).
+  label_smoothing: 0.0
+
+  # ★ KEY FIX 6 — Aggressive OHEM, matching Stage 4a recipe.
+  ohem_keep_ratio: 0.5
+  ohem_min_kept: 4096
+
+  # ★ KEY FIX 7 — Flat Dice (no inverse-square frequency weighting).
+  # Generalized Dice is designed for K≥3 classes with extreme inter-class
+  # imbalance. For binary 1% water our flat Dice is the well-conditioned
+  # choice. Validated by removing the val/dice=0.9994 pathology.
+  dice_variant: flat
+
+  # ★ KEY FIX 8 — Honest checkpoint selection (TTA on val).
+  # Stage 4a used val_tta=true and reached 0.865 honestly. Stage 4b v1
+  # used val_tta=false and reported 0.825 (~0.85 with TTA), giving the
+  # FALSE appearance of degradation. Re-enable so checkpoint selection
+  # matches what we actually deploy.
+  val_tta: true
+  test_tta: true
+
+  compile_model: true
+
+# ─────────────────────────────────────────────────────────────────────
+# TRAINER — room for SWA, longer patience
+# ─────────────────────────────────────────────────────────────────────
+trainer:
+  # ★ KEY FIX 9 — Longer schedule so SWA actually activates.
+  max_epochs: 30
+  accelerator: gpu
+  devices: 1
+  precision: bf16-mixed
+  gradient_clip_val: 1.0
+  accumulate_grad_batches: 1
+  log_every_n_steps: 25
+  check_val_every_n_epoch: 1
+
+  # ★ KEY FIX 10 — Patience large enough for SWA tail.
+  # With max_epochs=30 + swa_start=0.4 (epoch 12), SWA collects 18 epochs
+  # of weights. Patience=15 ensures we don't kill before SWA stabilises.
+  early_stopping_patience: 15
+  checkpoint_every_n_steps: 500
+
+  ema:
+    decay: 0.999
+    apply_at_validation: true
+    apply_at_test: true
+    cpu_shadow: true
+    skip_buffers: true
+
+  # ★ KEY FIX 11 — SWA starts EARLY (40% of epochs ≈ epoch 12).
+  # With patience=15 and 30 epochs, training likely runs the full 30
+  # (or close to it). SWA covers epochs 12-30, which is the BERT/RoBERTa
+  # tail-average sweet spot (Izmailov et al. 2018 §5.2).
+  swa:
+    swa_epoch_start: 0.4
+    swa_lrs: 1.0e-5
+    annealing_epochs: 3
+    annealing_strategy: cos

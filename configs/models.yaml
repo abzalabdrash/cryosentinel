@@ -1,0 +1,122 @@
+# ─────────────────────────────────────────────────────────────
+# CryoSentinel — Model configuration (SOTA 2026 stack)
+# ─────────────────────────────────────────────────────────────
+
+# Primary model — основная архитектура
+primary:
+  backbone:
+    name: "Prithvi-EO-2.0-300M"
+    hf_repo: "ibm-nasa-geospatial/Prithvi-EO-2.0-300M"
+    type: "vision_transformer"
+    params: 300_000_000
+    bands: ["BLUE", "GREEN", "RED", "NIR_NARROW", "SWIR_1", "SWIR_2"]
+    img_size: 224
+    patch_size: 16
+    notes: "December 2024 release. +30% IoU vs 1.0 на flood mapping benchmark."
+
+  decoder:
+    type: "UperNet"  # стандарт для segmentation в TerraTorch
+    channels: [256, 512, 1024, 1024]
+
+  finetune:
+    method: "LoRA"          # LoRA adapters — memory efficient
+    lora_rank: 16
+    lora_alpha: 32
+    lora_dropout: 0.1
+    target_modules: ["qkv", "proj", "fc1", "fc2"]
+    trainable_params_pct: 1.5  # ~4.5M из 300M params
+
+  loss:
+    primary: "DiceLoss"
+    auxiliary: "BCEWithLogitsLoss"
+    boundary: "BoundaryLoss"   # для маленьких озёр, чёткие края
+    weights: [0.5, 0.3, 0.2]
+
+  optimizer:
+    name: "AdamW"
+    lr: 3.0e-5
+    weight_decay: 0.01
+
+  scheduler:
+    name: "CosineAnnealingWarmRestarts"
+    T_0: 10
+    T_mult: 2
+
+  training:
+    batch_size: 8           # T4 16GB: 8 OK с LoRA + grad ckpt
+    gradient_accumulation: 4
+    max_epochs: 50
+    early_stopping_patience: 10
+    precision: "16-mixed"
+    gradient_clip_val: 1.0
+
+# Multi-modal fusion (Stage 3)
+multimodal:
+  enabled: true
+  modalities:
+    - { name: "S2_optical", source: "Sentinel-2",   bands: 6, weight: 1.0 }
+    - { name: "S1_SAR",     source: "Sentinel-1",   bands: 2, weight: 0.7 }   # VV+VH
+    - { name: "DEM",        source: "Copernicus 30m", bands: 1, weight: 0.5 }
+  fusion_strategy: "mid_fusion_cross_attention"
+  cross_attn_heads: 4
+
+# Fallback foundation models (если Prithvi-2 не сработает)
+fallbacks:
+  prithvi_v1:
+    hf_repo: "ibm-nasa-geospatial/Prithvi-EO-1.0-100M-sen1floods11"
+    notes: "Уже fine-tuned на flood mapping, отличный baseline"
+
+  croma:
+    hf_repo: "antofuller/CROMA"
+    notes: "NeurIPS 2023, multi-modal pre-trained S1+S2 contrastive"
+    
+  dofa:
+    hf_repo: "XShadow/DOFA"
+    notes: "2024 Dynamic-One-For-All, унифицированный multi-modal encoder"
+
+  glavitu:
+    hf_repo: "geoaitech/glavitu"
+    notes: "Specifically для glacier mapping, GitHub konstantin0urs/GlaViTU-pytorch"
+
+# Hazard scoring (Stage 4)
+hazard:
+  model: "XGBoost"
+  hyperparams:
+    n_estimators: 500
+    max_depth: 6
+    learning_rate: 0.05
+    subsample: 0.8
+    colsample_bytree: 0.8
+    early_stopping_rounds: 30
+  
+  features:
+    - "lake_area_km2"
+    - "area_change_rate_5yr"
+    - "area_change_rate_1yr"
+    - "elev_m"
+    - "slope_max_deg"
+    - "dam_type"                # moraine | ice | bedrock
+    - "freeboard_m"             # высота берега над водой
+    - "upstream_glacier_area_km2"
+    - "upstream_glacier_change_rate"
+    - "downstream_distance_km"
+    - "downstream_population"
+    - "valley_v_ratio"          # narrow valleys = higher risk
+    - "temperature_trend_30d"   # ERA5
+    - "precipitation_30d"       # ERA5
+    - "rapid_seasonal_drawdown" # boolean
+  
+  calibration: "isotonic"       # лучше Platt для асимметричных данных
+  
+  thresholds:
+    low: 0.0
+    medium: 0.25
+    high: 0.55
+    critical: 0.80
+
+# Annotation помощник
+annotation:
+  tool: "SAM2"                # Segment Anything 2 для semi-auto
+  model: "facebook/sam2-hiera-large"
+  prompt_type: "point"        # клик в озеро — модель предлагает маску
+  manual_review: true

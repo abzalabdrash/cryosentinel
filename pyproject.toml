@@ -1,0 +1,111 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Abzal Abdrash
+
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cryosentinel"
+version = "1.0.0"
+description = "Foundation-model segmentation of glacial lakes from Sentinel-1 SAR, Sentinel-2 optical, and Copernicus DEM imagery."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [
+    { name = "Abzal Abdrash" },
+]
+keywords = [
+    "glacial-lakes",
+    "GLOF",
+    "remote-sensing",
+    "semantic-segmentation",
+    "foundation-models",
+    "TerraMind",
+    "multimodal",
+    "earth-observation",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: GIS",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+]
+
+dependencies = [
+    "torch>=2.5,<2.6",
+    "torchvision>=0.20,<0.21",
+    "lightning>=2.6,<2.8",
+    "terratorch>=1.2.5,<1.3",
+    "numpy>=2.2,<3.0",
+    "pandas>=2.0,<2.4",
+    "pyarrow>=16.0,<18.0",
+    "rasterio>=1.4",
+    "shapely>=2.0",
+    "pyproj>=3.6",
+    "geopandas>=1.0",
+    "huggingface-hub>=0.25,<1.0",
+    "albumentations>=1.4.20",
+    "scikit-learn>=1.5",
+    "scipy>=1.13",
+    "tqdm>=4.66",
+    "pyyaml>=6.0",
+    "click>=8.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+    "mypy>=1.10",
+    "pre-commit>=3.7",
+]
+viz = [
+    "matplotlib>=3.9",
+    "seaborn>=0.13",
+    "ipykernel>=6.29",
+]
+
+[project.urls]
+Homepage = "https://github.com/abzalabdrash/Cryosentinel"
+Repository = "https://github.com/abzalabdrash/Cryosentinel"
+Documentation = "https://github.com/abzalabdrash/Cryosentinel/tree/main/docs"
+Issues = "https://github.com/abzalabdrash/Cryosentinel/issues"
+ModelHub = "https://huggingface.co/abzal-glw/cryosentinel-terramind-v3"
+OperationalSystem = "https://github.com/abzalabdrash/glofcast"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+cryosentinel = ["py.typed"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
+warn_unused_ignores = true
+warn_redundant_casts = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --tb=short"
