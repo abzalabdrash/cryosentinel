@@ -7,6 +7,10 @@ A foundation-model segmenter for glacial lakes from Sentinel-1 SAR, Sentinel-2 o
 [![PyTorch 2.5](https://img.shields.io/badge/PyTorch-2.5-EE4C2C.svg)](https://pytorch.org/)
 [![Lightning 2.6](https://img.shields.io/badge/Lightning-2.6-792EE5.svg)](https://lightning.ai/)
 [![Model on HF](https://img.shields.io/badge/🤗_Hub-abzal--glw%2Fcryosentinel--terramind--v3-yellow)](https://huggingface.co/abzal-glw/cryosentinel-terramind-v3)
+[![Dataset on HF](https://img.shields.io/badge/🤗_Dataset-abzal--glw%2Fcryosentinel--glof--v3-yellow)](https://huggingface.co/datasets/abzal-glw/cryosentinel-glof-v3)
+[![DOI (code)](https://zenodo.org/badge/DOI/10.5281/zenodo.20239229.svg)](https://doi.org/10.5281/zenodo.20239229)
+[![DOI (dataset)](https://img.shields.io/badge/DOI%20(dataset)-10.57967%2Fhf%2F8823-blue)](https://doi.org/10.57967/hf/8823)
+[![ORCID](https://img.shields.io/badge/ORCID-0009--0006--4829--0256-A6CE39?logo=orcid&logoColor=white)](https://orcid.org/0009-0006-4829-0256)
 
 <p align="center">
   <img src="docs/brand/social_preview_1024x512.png" alt="CryoSentinel — TerraMind 1.0 · Tien Shan · val IoU 0.9557" width="100%">
@@ -36,7 +40,7 @@ CryoSentinel is the segmentation backbone behind GLOFcast — an open-source scr
 
 The model takes a 224 × 224 chip at 10 m/pixel containing twelve Sentinel-2 L2A bands, two Sentinel-1 GRD polarisations (VV and VH), and one Copernicus 30 m DEM band, and returns a binary water mask. The chip extent is roughly 2.2 × 2.2 km on the ground.
 
-This repository is a model-first public release: it publishes the weights, model card, dataset description, benchmark tables, label-noise audit, figures, citation metadata, license, and a lightweight reference package for downstream inspection. The full training, cloud orchestration, checkpoint-recovery, and internal evaluation scripts used to produce v1.0 are intentionally retained in the private development repository.
+This repository releases the training and inference code, the configs that produced the headline numbers, two production checkpoints on Hugging Face, and the multimodal training dataset.
 
 ### How it works, in plain language
 
@@ -72,14 +76,13 @@ I am not aware of a published model that reports a higher validation IoU on a co
 
 ## What's in this release
 
-- Public benchmark tables, per-region breakdowns, and the full label-noise audit that explains the label-corrected held-out test score.
-- The public dataset card and dataset statistics for `abzal-glw/cryosentinel-glof-v3`.
-- A reference package containing the public model components, block-split logic, and inference utilities needed to inspect the released model artifacts.
-- Rights, trademark, citation, security, and contribution files so downstream users know exactly how to attribute the work.
+- The training and evaluation code (`src/cryosentinel/`, `scripts/train_terramind.py`, `scripts/train_terramind_modal.py`, `scripts/eval_stage4b_diagnostics.py`).
+- Two production configs (`configs/terramind_v3_pretrain_v2.yaml`, `configs/terramind_v3_finetune_almaty_v2.yaml`) with inline comments documenting the eleven engineering changes between the v1 and v2 finetune stages — see `docs/METHOD.md` §3 for the full diff.
 - Two production checkpoints on Hugging Face under `abzal-glw/cryosentinel-terramind-v3`:
   - `terramind_v3_finetune_almaty_v2/checkpoints/soup.ckpt` — the production checkpoint, a uniform weight-space average of five SWA snapshots collected from epoch 12 to epoch 30 (Wortsman et al., 2022 / Izmailov et al., 2018). This is what produces every headline number.
   - `terramind_v3_finetune_almaty_v2/checkpoints/step001605-iou0.952.ckpt` — the single best checkpoint, kept for ablation against the soup.
 - Per-chip diagnostics for the validation and test splits as Parquet files at `abzal-glw/cryosentinel-terramind-v3/terramind_v3_finetune_almaty_v2__soup_tta1/diagnostics/`.
+- `scripts/reproduce_benchmarks.sh` — the single command that reproduces the headline table from a fresh clone.
 
 The training dataset (multimodal chips v3, 5,614 chips for the finetune split, ~ 30 GiB total) is publicly available at `abzal-glw/cryosentinel-glof-v3` on Hugging Face Datasets. All upstream data sources are open (Copernicus open-access for Sentinel-1/2 + COPDEM30; PANGAEA CC-BY for the Kumar & Vijay 2026 inventory). See `docs/DATA.md` for the per-band normalisation statistics and download instructions.
 
@@ -90,30 +93,42 @@ The training dataset (multimodal chips v3, 5,614 chips for the finetune split, ~
 Use Python 3.11 in a fresh virtual environment:
 
 ```bash
-git clone https://github.com/abzalabdrash/Cryosentinel.git
+git clone https://github.com/abzalabdrash/cryosentinel.git
 cd Cryosentinel
 python -m venv .venv && source .venv/bin/activate   # on Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 ```
 
-### Download the released checkpoint
+### Inference on released chips
 
 ```bash
-huggingface-cli download \
-    abzal-glw/cryosentinel-terramind-v3 \
-    terramind_v3_finetune_almaty_v2/checkpoints/soup.ckpt \
-    --local-dir ./checkpoints
+modal run scripts/predict_modal.py::predict \
+    --hf-data-repo abzal-glw/cryosentinel-glof-v3 \
+    --hf-ckpt-repo abzal-glw/cryosentinel-terramind-v3 \
+    --ckpt-uri hf://abzal-glw/cryosentinel-terramind-v3/terramind_v3_finetune_almaty_v2/checkpoints/soup.ckpt \
+    --config configs/terramind_v3_finetune_almaty_v2.yaml \
+    --region ile_alatau --year 2023 --n-chips 30 \
+    --gpu L4
 ```
 
 ### Reproduce the headline table
 
-The released checkpoint, dataset statistics, per-chip diagnostics, and threshold sweeps are public. `docs/REPRODUCING.md` documents how the headline numbers were produced and what artifacts to compare. The exact cloud orchestration scripts used for the v1.0 training and evaluation runs are not part of the public repository; they remain available for due-diligence review in formal research or operational collaborations.
+On Modal H100 (~$3, ~25 minutes):
+
+```bash
+modal run scripts/eval_stage4b_diagnostics.py::diag \
+    --config configs/terramind_v3_finetune_almaty_v2.yaml \
+    --ckpt-uri hf://abzal-glw/cryosentinel-terramind-v3/terramind_v3_finetune_almaty_v2/checkpoints/soup.ckpt \
+    --run-name reproduce_headline
+```
+
+The full training-from-scratch sequence (Stage 4a pretrain on twelve HMA sub-regions, then Stage 4b finetune on the three Almaty-corridor regions) takes about twelve hours on H100 and costs roughly $50 in cloud credits. See `docs/REPRODUCING.md` for the exact commands and local-GPU notes.
 
 ## Method
 
 The architecture is straightforward. The encoder is **TerraMind 1.0 Large** (1.1 B parameters, dual-scale transformer encoder-decoder pretrained on 9 M spatiotemporally-aligned multimodal samples from the TerraMesh dataset; Jakubik et al., 2025). The decoder is a UperNet head with a 256 → 128 → 64 → 32 channel sequence and a `LearnedInterpolateToPyramidal` neck. The loss is a weighted combination of binary cross-entropy with `pos_weight = 100`, a flat Dice term, the per-image Lovász softmax (Berman et al., 2018), and an asymmetric Tversky term (α = 0.25, β = 0.75); we apply OHEM hard-negative mining with `keep_ratio = 0.5` and `min_kept = 4096`. The optimiser is AdamW in two parameter groups, with a backbone learning rate of 5e-6 and a decoder learning rate of 5e-4, both with cosine warm-up. We collect SWA snapshots from 40% of the schedule (epoch 12) through epoch 30 and average them in weight space. EMA (decay 0.999, CPU shadow) is applied at validation and test time. Test-time augmentation is flip-only — we found rotation TTA degrades TerraMind because of how its positional encoders interact with rotated inputs.
 
-The complete hyperparameter table, the eleven v1 → v2 engineering fixes, and a discussion of why each one mattered are in `docs/METHOD.md`. The total training cost across the v1 mistake, the v2 pretrain, and the v2 finetune was approximately $90 of H100 cloud credits. The production training system used robust checkpoint-resume machinery for cloud-side interruptions; that orchestration layer is not published in v1.0.
+The complete hyperparameter table, the eleven v1 → v2 engineering fixes, and a discussion of why each one mattered are in `docs/METHOD.md`. The total training cost across the v1 mistake, the v2 pretrain, and the v2 finetune was approximately $90 of Modal H100 cloud credits. A robust checkpoint-resume mechanism that lets long-running jobs survive cloud-side interruptions is documented in `scripts/train_terramind.py`.
 
 ## Block split
 
@@ -193,28 +208,28 @@ CryoSentinel is research-grade. We list what it is not:
 Following the spirit of the NeurIPS / Papers with Code reproducibility checklist:
 
 - Permissive license (Apache 2.0).
-- Pinned public package dependencies (`pyproject.toml`).
+- Pinned dependencies (`pyproject.toml` and Modal image definitions in `scripts/train_terramind_modal.py`, `scripts/eval_stage4b_diagnostics.py`, and `scripts/predict_modal.py`).
 - Random seeds documented (`seed: 42` in every config).
-- Model architecture, inputs, training protocol, and evaluation protocol documented.
+- Training code released.
+- Evaluation code released, including the diagnostics that produced every per-region number above.
 - Pre-trained weights released on Hugging Face under the same Apache 2.0 license.
 - Training dataset released on Hugging Face under ODC-By 1.0.
-- Hardware specification (H100 80 GB, batch size 8, bf16-mixed, ~ 12 hours total for pretrain + finetune).
+- Single-command reproduction of the headline table (`scripts/reproduce_benchmarks.sh`).
+- Hardware specification (Modal H100, batch size 8, bf16-mixed, ~ 12 hours total for pretrain + finetune).
 - Per-chip diagnostics released as Parquet files.
 - Limitations and failure cases documented above and in `docs/LIMITATIONS.md`.
 - Label-noise audit performed and documented in `docs/LABEL_NOISE_AUDIT.md`.
-
-The full training and cloud-evaluation orchestration is intentionally not included in this public release. This is a permissive model release, not a full transfer of the private production pipeline.
 
 The one item deferred is **multi-seed variance** — every reported number is from a single run with `seed = 42`. v1.0 ships the production-best result; the variance estimate (3 seeds: 17, 42, 1337) is scheduled for v1.1 in **June 2026** alongside additional ablations, after the UN Zayed Sustainability Prize 2026 submission is filed. Compute budget is allocated.
 
 ## How to contribute
 
-[![Help wanted](https://img.shields.io/badge/help_wanted-out--of--domain_validation-orange.svg)](https://github.com/abzalabdrash/Cryosentinel/issues/new?labels=help-wanted&title=Out-of-domain%20validation)
+[![Help wanted](https://img.shields.io/badge/help_wanted-out--of--domain_validation-orange.svg)](https://github.com/abzalabdrash/cryosentinel/issues/new?labels=help-wanted&title=Out-of-domain%20validation)
 
 Highest-leverage items:
 
 1. **Out-of-domain validation.** Run the released checkpoint on the Andes, European Alps, Caucasus, or Patagonia and share per-chip diagnostics. PR adds a row to `docs/EXTERNAL_VALIDATION.md`. The most useful contribution there is from someone with local field knowledge of one of those ranges.
-2. **Reproducibility checks.** Compare the public diagnostics and threshold sweeps against the benchmark tables. Open an issue if you find inconsistencies.
+2. **Reproducibility checks.** Re-run `scripts/reproduce_benchmarks.sh` on your hardware and confirm the headline numbers match to four decimal places. Open an issue if not.
 3. **Test-set audit completion.** Manually inspect the four `tien_shan_full` test chips with per-chip IoU < 0.05 (currently unaudited; could be model failures, additional Kumar mislabels, or a mixture). See `docs/LIMITATIONS.md` § 8.
 4. **Temporal modelling extension.** A 12-month chip stack with a TimeSformer head over the same TerraMind encoder — this is the v1.2 roadmap. Early experiments and PRs welcomed.
 
@@ -222,9 +237,9 @@ See `CONTRIBUTING.md` for the workflow.
 
 ### Compute support
 
-CryoSentinel was built on cloud credits available to a single early-career researcher in Almaty. The v1.0 production results (training, ablations, and the v1 mistake combined) cost roughly $90 of H100 time. v1.1 (multi-seed variance, MC-dropout uncertainty layer, June 2026) and v1.2 (temporal modelling) are budgeted but not abundantly so.
+CryoSentinel was built on cloud credits available to a single early-career researcher in Almaty. The v1.0 production results (training, ablations, and the v1 mistake combined) cost roughly $90 of Modal H100 time. v1.1 (multi-seed variance, MC-dropout uncertainty layer, June 2026) and v1.2 (temporal modelling) are budgeted but not abundantly so.
 
-**If you represent a GPU cloud provider, an academic-compute program, or a foundation that supports open climate-risk research**, even a small grant of H100 / H200 credits would meaningfully accelerate the v1.1 and v1.2 work. Reach out via [GitHub issues](https://github.com/abzalabdrash/Cryosentinel/issues) or the contact link below.
+**If you represent a GPU cloud provider, an academic-compute program, or a foundation that supports open climate-risk research**, even a small grant of H100 / H200 credits would meaningfully accelerate the v1.1 and v1.2 work. Reach out via [GitHub issues](https://github.com/abzalabdrash/cryosentinel/issues) or the contact link below.
 
 ## Citation
 
@@ -236,13 +251,24 @@ If CryoSentinel is useful in your research or operational work, please cite:
   title     = {{CryoSentinel: A Foundation-Model Glacial Lake Segmenter
                for High Mountain Asia}},
   year      = {2026},
-  publisher = {GitHub},
-  url       = {https://github.com/abzalabdrash/Cryosentinel},
-  version   = {v1.0.0}
+  publisher = {Zenodo},
+  url       = {https://github.com/abzalabdrash/cryosentinel},
+  version   = {v1.0.0},
+  doi       = {10.5281/zenodo.20239229}
+}
+
+@dataset{abdrash2026cryosentinelglofv3,
+  author    = {Abdrash, Abzal},
+  title     = {{CryoSentinel-GLOF v3: Multimodal Glacial Lake Chips
+               for High Mountain Asia}},
+  year      = {2026},
+  publisher = {Hugging Face},
+  url       = {https://huggingface.co/datasets/abzal-glw/cryosentinel-glof-v3},
+  doi       = {10.57967/hf/8823}
 }
 ```
 
-A preprint describing the method, the spatial block split, and the label-noise audit in detail is in preparation. We will update this section with the arXiv link when it is available.
+A preprint describing the method, the spatial block split, and the label-noise audit in detail is in preparation and will be posted on EarthArxiv. We will update this section with the EarthArxiv DOI when it is available.
 
 ## Acknowledgments
 
@@ -250,7 +276,7 @@ A preprint describing the method, the spatial block split, and the label-noise a
 - **Kumar, R. and Vijay, S.** for publishing the High Mountain Asia glacial lake inventory on PANGAEA. The 2016 / 2022 dataset is the supervision signal that made this work possible.
 - **Adhikari, P. and Regmi, S. R.** (2025) for the Sentinel-1-only baseline against which the multi-modal protocol here is compared. Their "temporal-first" framing of the GLOF early-warning problem is the right one.
 - **Wortsman, M. et al.** (2022) for the model soup formulation we use to average SWA snapshots, and **Izmailov, P. et al.** (2018) for the SWA schedule itself.
-- **Cloud GPU providers** for low-friction access to H100 and L40S compute.
+- **Modal Labs and Cerebrium** for low-friction access to H100 and L40S compute.
 - **Hugging Face** for hosting the model weights, the dataset, and the per-chip diagnostics under a single namespace.
 - The **«Казселезащита»** Almaty-oblast mudflow-protection service and the **UNESCO GLOFCA** programme — the institutional context this work is positioned to complement, not replace. As stated in the affiliation disclosure above, CryoSentinel is not affiliated with either organisation; this acknowledgment recognises their decades of operational work on the same problem.
 
